@@ -10,24 +10,24 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # ========== Email Config ==========
 SENDER_EMAIL = "fakeloginpage13@gmail.com"
 SENDER_PASSWORD = "facd uucd rqsd wtjy"   # use Gmail App Password, not your real password
-RECEIVER_EMAIL = "fakeloginpage13@gmail.com"
 
-def send_email(url, price):
+
+def send_email(url, price, receiver_email):
     subject = "Amazon Price Alert!"
     body = f"Price dropped to ₹{price}!\nCheck the product here: {url}"
 
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
+    msg["To"] = receiver_email
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
 
-    st.success("📧 Email sent!")
+    st.success(f"📧 Email sent to {receiver_email}!")
 
 def get_price(url):
     headers = {
@@ -60,38 +60,36 @@ def get_price(url):
     converted_price = int(digits) if digits else None
     return title_text, converted_price
 
-
 # ========== Streamlit UI ==========
 st.title("🛒 Amazon Price Tracker")
 st.write("Enter an Amazon product link and get notified via email when the price drops below your threshold!")
 
 url = st.text_input("Enter Amazon Product URL")
 threshold = st.number_input("Enter threshold price (₹)", min_value=1, step=100)
+user_email = st.text_input("Enter your email for notification")
 
 if "scheduler" not in st.session_state:
     st.session_state.scheduler = None
 
 def scheduled_task():
-    if not url.strip():
+    if not url.strip() or not user_email.strip():
         return
     title, current_price = get_price(url)
     if current_price and current_price <= threshold:
-        send_email(url, current_price)
+        send_email(url, current_price, user_email)
 
 if st.button("Start Tracking"):
-    if not url.strip():
-        st.error("Please enter a valid Amazon URL.")
+    if not url.strip() or not user_email.strip():
+        st.error("Please enter a valid Amazon URL and your email.")
     else:
         title, current_price = get_price(url)
         if current_price:
             st.write(f"**Product:** {title}")
             st.write(f"**Current Price:** ₹{current_price}")
 
-            # Case 1: price already low enough → send immediately
             if current_price <= threshold:
-                send_email(url, current_price)
+                send_email(url, current_price, user_email)
             else:
-                # Case 2: schedule daily check
                 st.warning(f"❌ Current price ₹{current_price} > threshold ₹{threshold}. Scheduling daily check...")
                 scheduler = BackgroundScheduler()
                 scheduler.add_job(scheduled_task, "interval", days=1)
