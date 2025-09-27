@@ -1,15 +1,17 @@
+
 import requests
 from bs4 import BeautifulSoup
-import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import streamlit as st
 from apscheduler.schedulers.background import BackgroundScheduler
+import pandas as pd
+import os
 
 # ========== Email Config ==========
 SENDER_EMAIL = "fakeloginpage13@gmail.com"
-SENDER_PASSWORD = "facd uucd rqsd wtjy"   # use Gmail App Password, not your real password
+SENDER_PASSWORD = "facd uucd rqsd wtjy"   # use Gmail App Password
 
 
 def send_email(url, price, receiver_email):
@@ -28,6 +30,7 @@ def send_email(url, price, receiver_email):
         server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
 
     st.success(f"📧 Email sent to {receiver_email}!")
+
 
 def get_price(url):
     headers = {
@@ -55,10 +58,39 @@ def get_price(url):
 
     if not price:
         return title_text, None
+    
+    cleaned_price = price.replace(",", "").replace("₹", "").strip()
 
-    digits = re.sub(r"\D", "", price)
-    converted_price = int(digits) if digits else None
+    try:
+        converted_price = int(float(cleaned_price))
+    except ValueError:
+        converted_price = None
     return title_text, converted_price
+
+
+# ========== CSV Helper ==========
+CSV_FILE = "user_data.csv"
+
+def save_user_data(url, threshold, email):
+    new_data = pd.DataFrame([[url, threshold, email]],
+                            columns=["URL", "Threshold", "Email"])
+    if os.path.exists(CSV_FILE):
+        new_data.to_csv(CSV_FILE, mode="a", header=False, index=False)
+    else:
+        new_data.to_csv(CSV_FILE, index=False)
+
+
+def scheduled_task():
+    if not os.path.exists(CSV_FILE):
+        return
+    
+    df = pd.read_csv(CSV_FILE)
+    for _, row in df.iterrows():
+        url, threshold, email = row["URL"], row["Threshold"], row["Email"]
+        title, current_price = get_price(url)
+        if current_price and current_price <= int(threshold):
+            send_email(url, current_price, email)
+
 
 # ========== Streamlit UI ==========
 st.title("🛒 Amazon Price Tracker")
@@ -71,13 +103,6 @@ user_email = st.text_input("Enter your email for notification")
 if "scheduler" not in st.session_state:
     st.session_state.scheduler = None
 
-def scheduled_task():
-    if not url.strip() or not user_email.strip():
-        return
-    title, current_price = get_price(url)
-    if current_price and current_price <= threshold:
-        send_email(url, current_price, user_email)
-
 if st.button("Start Tracking"):
     if not url.strip() or not user_email.strip():
         st.error("Please enter a valid Amazon URL and your email.")
@@ -86,6 +111,9 @@ if st.button("Start Tracking"):
         if current_price:
             st.write(f"**Product:** {title}")
             st.write(f"**Current Price:** ₹{current_price}")
+
+            # Save user details to CSV
+            save_user_data(url, threshold, user_email)
 
             if current_price <= threshold:
                 send_email(url, current_price, user_email)
@@ -97,3 +125,4 @@ if st.button("Start Tracking"):
                 st.session_state.scheduler = scheduler
         else:
             st.error("❌ Could not fetch price. Amazon may be blocking the request.")
+
